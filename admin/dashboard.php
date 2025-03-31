@@ -33,7 +33,7 @@ if (hasPermission('view_all_programs')) {
         $metrics['programs'] = $result->fetch_assoc()['count'];
     }
 } else {
-    $query = "SELECT COUNT(*) as count FROM program_assignments WHERE user_id = $userId";
+    $query = "SELECT COUNT(*) as count FROM program_users WHERE user_id = $userId";
     $result = $conn->query($query);
     if ($result && $result->num_rows > 0) {
         $metrics['programs'] = $result->fetch_assoc()['count'];

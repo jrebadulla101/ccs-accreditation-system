@@ -1,10 +1,17 @@
 <?php
-require_once 'db_connect.php';
-require_once 'functions.php';
+// Start session if not already started
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
 
-// For non-login pages, require login
-if (basename($_SERVER['PHP_SELF']) != 'login.php') {
-    requireLogin();
+// Include necessary files
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/functions.php';
+
+// Check if user is logged in
+if (!isset($_SESSION['admin_id'])) {
+    header("Location: " . APP_URL . "login.php");
+    exit();
 }
 ?>
 <!DOCTYPE html>
@@ -12,7 +19,7 @@ if (basename($_SERVER['PHP_SELF']) != 'login.php') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo pageTitle(); ?></title>
+    <title><?php echo isset($page_title) ? $page_title . ' - ' : ''; ?>CCS Accreditation System</title>
     <!-- Favicon -->
     <link rel="shortcut icon" href="<?php echo $basePath; ?>../assets/images/earist-logo.png" type="image/x-icon">
     <!-- Font Awesome -->

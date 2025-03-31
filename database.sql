@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS parameters (
     FOREIGN KEY (area_level_id) REFERENCES area_levels(id) ON DELETE CASCADE
 );
 
--- Parameter Evidence table for file uploads and links
+-- Parameter Evidence table
 CREATE TABLE IF NOT EXISTS parameter_evidence (
     id INT AUTO_INCREMENT PRIMARY KEY,
     parameter_id INT NOT NULL,
@@ -208,7 +208,7 @@ CREATE TABLE IF NOT EXISTS parameter_evidence (
     FOREIGN KEY (uploaded_by) REFERENCES admin_users(id)
 );
 
--- User roles table
+-- Roles table
 CREATE TABLE IF NOT EXISTS roles (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE,
@@ -236,6 +236,17 @@ CREATE TABLE IF NOT EXISTS user_roles (
     UNIQUE(user_id, role_id)
 );
 
+-- Program user assignments
+CREATE TABLE IF NOT EXISTS program_users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    program_id INT NOT NULL,
+    user_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES admin_users(id) ON DELETE CASCADE,
+    UNIQUE(program_id, user_id)
+);
+
 -- Permissions table
 CREATE TABLE IF NOT EXISTS permissions (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -243,70 +254,6 @@ CREATE TABLE IF NOT EXISTS permissions (
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- Insert comprehensive permission set
-INSERT INTO permissions (name, description) VALUES
--- Program permissions
-('view_all_programs', 'Can view all programs in the system'),
-('view_assigned_programs', 'Can only view programs assigned to the user'),
-('add_program', 'Can add new programs'),
-('edit_program', 'Can edit program details'),
-('delete_program', 'Can delete programs'),
-
--- Area permissions
-('view_all_areas', 'Can view all areas in the system'),
-('view_assigned_areas', 'Can only view areas within assigned programs'),
-('add_area', 'Can add new area levels'),
-('edit_area', 'Can edit area details'),
-('delete_area', 'Can delete areas'),
-
--- Parameter permissions
-('view_all_parameters', 'Can view all parameters in the system'),
-('view_assigned_parameters', 'Can only view parameters within assigned areas'),
-('add_parameter', 'Can add new parameters'),
-('edit_parameter', 'Can edit parameter details'),
-('delete_parameter', 'Can delete parameters'),
-
--- Evidence permissions
-('view_all_evidence', 'Can view all evidence items in the system'),
-('view_assigned_evidence', 'Can only view evidence for assigned parameters'),
-('add_evidence', 'Can upload evidence files or links'),
-('edit_evidence', 'Can edit evidence details'),
-('delete_evidence', 'Can delete evidence'),
-('download_evidence', 'Can download evidence files'),
-
--- Approval permissions
-('approve_evidence', 'Can approve or reject evidence submissions'),
-('view_pending_evidence', 'Can view pending evidence submissions'),
-
--- User management permissions
-('view_users', 'Can view system users'),
-('add_user', 'Can add new users'),
-('edit_user', 'Can edit user details'),
-('delete_user', 'Can delete users'),
-('assign_roles', 'Can assign roles to users'),
-
--- Program assignment permissions
-('assign_programs', 'Can assign programs to users'),
-('assign_areas', 'Can assign areas to users'),
-('assign_parameters', 'Can assign parameters to users'),
-
--- Role management permissions
-('view_roles', 'Can view system roles'),
-('add_role', 'Can add new roles'),
-('edit_role', 'Can edit role details'),
-('delete_role', 'Can delete roles'),
-('manage_permissions', 'Can manage role permissions'),
-
--- Report permissions
-('view_reports', 'Can view accreditation reports'),
-('generate_reports', 'Can generate new reports'),
-('export_reports', 'Can export reports to different formats'),
-
--- System permissions
-('manage_settings', 'Can manage system settings'),
-('view_logs', 'Can view system logs and activity'),
-('backup_system', 'Can create and restore system backups');
 
 -- Role-permission assignments
 CREATE TABLE IF NOT EXISTS role_permissions (
@@ -319,20 +266,46 @@ CREATE TABLE IF NOT EXISTS role_permissions (
     UNIQUE(role_id, permission_id)
 );
 
--- Insert default role-permission assignments
-INSERT INTO role_permissions (role_id, permission_id) 
-SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'super_admin';
+-- Insert default permissions
+INSERT INTO permissions (name, description) VALUES
+('view_all_programs', 'Can view all programs in the system'),
+('view_assigned_programs', 'Can only view programs assigned to the user'),
+('add_program', 'Can add new programs'),
+('edit_program', 'Can edit program details'),
+('delete_program', 'Can delete programs'),
+('view_all_areas', 'Can view all areas in the system'),
+('view_assigned_areas', 'Can only view areas within assigned programs'),
+('add_area', 'Can add new area levels'),
+('edit_area', 'Can edit area details'),
+('delete_area', 'Can delete areas'),
+('view_all_parameters', 'Can view all parameters in the system'),
+('view_assigned_parameters', 'Can only view parameters within assigned areas'),
+('add_parameter', 'Can add new parameters'),
+('edit_parameter', 'Can edit parameter details'),
+('delete_parameter', 'Can delete parameters'),
+('view_all_evidence', 'Can view all evidence items in the system'),
+('view_assigned_evidence', 'Can only view evidence for assigned parameters'),
+('add_evidence', 'Can upload evidence files or links'),
+('edit_evidence', 'Can edit evidence details'),
+('delete_evidence', 'Can delete evidence'),
+('download_evidence', 'Can download evidence files'),
+('approve_evidence', 'Can approve or reject evidence submissions'),
+('view_users', 'Can view system users'),
+('add_user', 'Can add new users'),
+('edit_user', 'Can edit user details'),
+('delete_user', 'Can delete users'),
+('view_roles', 'Can view system roles'),
+('add_role', 'Can add new roles'),
+('edit_role', 'Can edit role details'),
+('delete_role', 'Can delete roles'),
+('manage_permissions', 'Can manage role permissions');
 
--- Program user assignments (for program managers)
-CREATE TABLE IF NOT EXISTS program_users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    program_id INT NOT NULL,
-    user_id INT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES admin_users(id) ON DELETE CASCADE,
-    UNIQUE(program_id, user_id)
-);
+-- Assign all permissions to super_admin role
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT 
+    (SELECT id FROM roles WHERE name = 'super_admin'),
+    id
+FROM permissions;
 
 -- Create a table for area-specific permissions
 CREATE TABLE IF NOT EXISTS area_user_permissions (

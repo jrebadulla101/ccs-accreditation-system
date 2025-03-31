@@ -1,41 +1,57 @@
 <?php
-// Adjust the relative path as needed
-$basePath = '../../';
-include $basePath . 'includes/header.php';
+// Start session and include required files
+require_once '../../includes/config.php';
+session_start();
+
+// Include other necessary files
+require_once '../../includes/functions.php';
+
+// Redirect if not logged in
+if (!isset($_SESSION['admin_id'])) {
+    header("Location: ../../login.php");
+    exit();
+}
 
 // Get area ID from URL
 $areaId = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
+// Validate area ID
 if ($areaId <= 0) {
     setFlashMessage("danger", "Invalid area ID.");
     header("Location: list.php");
     exit();
 }
 
-// Check if user has permission to view this area
-if (!hasAccessToArea($areaId)) {
+// Check if user has permission to view areas
+if (!hasPermission('view_all_areas') && !hasAreaPermission($areaId, 'view')) {
     setFlashMessage("danger", "You don't have permission to view this area.");
     header("Location: list.php");
     exit();
 }
 
-// Get area details with program info
-$areaQuery = "SELECT a.*, p.name as program_name, p.id as program_id 
-              FROM area_levels a 
-              JOIN programs p ON a.program_id = p.id 
-              WHERE a.id = ?";
-$areaStmt = $conn->prepare($areaQuery);
-$areaStmt->bind_param("i", $areaId);
-$areaStmt->execute();
-$areaResult = $areaStmt->get_result();
+// Get area details
+$query = "SELECT a.*, p.name as program_name 
+          FROM area_levels a 
+          JOIN programs p ON a.program_id = p.id 
+          WHERE a.id = ?";
+$stmt = $conn->prepare($query);
+$stmt->bind_param("i", $areaId);
+$stmt->execute();
+$result = $stmt->get_result();
 
-if ($areaResult->num_rows === 0) {
+if ($result->num_rows === 0) {
     setFlashMessage("danger", "Area not found.");
     header("Location: list.php");
     exit();
 }
 
-$area = $areaResult->fetch_assoc();
+$area = $result->fetch_assoc();
+
+// Set page title
+$page_title = "View Area: " . htmlspecialchars($area['name']);
+
+// Include header
+include_once '../../includes/header.php';
 
 // Get parameters for this area
 $paramQuery = "SELECT * FROM parameters WHERE area_level_id = ? ORDER BY name ASC";

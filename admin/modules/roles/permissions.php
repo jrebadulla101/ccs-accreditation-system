@@ -87,7 +87,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         // Log activity
         $userId = $_SESSION['admin_id'];
         $activityType = "permissions_updated";
-        $activityDescription = "Updated permissions for role: {$role['name']}";
+        // Ensure role name is a string
+        $roleName = is_array($role['name']) ? 'Unknown Role' : (string)$role['name'];
+        $activityDescription = "Updated permissions for role: " . $roleName;
         $ipAddress = $_SERVER['REMOTE_ADDR'];
         
         $logQuery = "INSERT INTO activity_logs (user_id, activity_type, description, ip_address) VALUES (?, ?, ?, ?)";
@@ -104,6 +106,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     } catch (Exception $e) {
         // Rollback transaction on error
         $conn->rollback();
+        error_log("Error updating permissions: " . $e->getMessage());
         $errorMessage = "Failed to update permissions: " . $e->getMessage();
     }
 }
@@ -124,82 +127,7 @@ while ($row = $currentPermissionsResult->fetch_assoc()) {
     $currentPermissions[] = $row['permission_id'];
 }
 
-// Include header
-include_once '../../includes/header.php';
 ?>
-
-<div class="content-wrapper">
-    <div class="page-header">
-        <h1>Manage Role Permissions</h1>
-        <nav class="breadcrumb-container">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="../../dashboard.php">Dashboard</a></li>
-                <li class="breadcrumb-item"><a href="list.php">Roles</a></li>
-                <li class="breadcrumb-item active">Manage Permissions</li>
-            </ol>
-        </nav>
-    </div>
-
-    <?php if (isset($errorMessage)): ?>
-        <div class="alert alert-danger">
-            <?php echo $errorMessage; ?>
-        </div>
-    <?php endif; ?>
-
-    <?php if (isset($_SESSION['flash_message'])): ?>
-        <div class="alert alert-<?php echo $_SESSION['flash_message_type']; ?>">
-            <?php 
-            echo $_SESSION['flash_message']; 
-            unset($_SESSION['flash_message']);
-            unset($_SESSION['flash_message_type']);
-            ?>
-        </div>
-    <?php endif; ?>
-
-    <div class="card">
-        <div class="card-header">
-            <h2>Permissions for Role: <?php echo htmlspecialchars($role['name']); ?></h2>
-        </div>
-        <div class="card-body">
-            <form method="POST" action="">
-                <div class="permissions-grid">
-                    <?php if ($permissionsResult && $permissionsResult->num_rows > 0): ?>
-                        <?php while ($permission = $permissionsResult->fetch_assoc()): ?>
-                            <div class="permission-item">
-                                <label class="checkbox-container">
-                                    <input type="checkbox" 
-                                           name="permissions[]" 
-                                           value="<?php echo $permission['id']; ?>"
-                                           <?php echo in_array($permission['id'], $currentPermissions) ? 'checked' : ''; ?>
-                                           <?php echo ($isSystemRole && !hasRole('super_admin')) ? 'disabled' : ''; ?>>
-                                    <span class="checkmark"></span>
-                                    <?php echo htmlspecialchars($permission['name']); ?>
-                                </label>
-                                <?php if ($permission['description']): ?>
-                                    <div class="permission-description">
-                                        <?php echo htmlspecialchars($permission['description']); ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <p>No permissions found.</p>
-                    <?php endif; ?>
-                </div>
-
-                <div class="form-actions">
-                    <a href="list.php" class="btn btn-secondary">Cancel</a>
-                    <?php if (!$isSystemRole || hasRole('super_admin')): ?>
-                        <button type="submit" class="btn btn-primary">Save Changes</button>
-                    <?php endif; ?>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<?php include_once '../../includes/footer.php'; ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -910,12 +838,11 @@ include_once '../../includes/header.php';
                                 
                                 if ($roleResult && $roleResult->num_rows > 0) {
                                     $roleData = $roleResult->fetch_assoc();
-                                    // Get the role from the enum field
-                                    $role = $roleData['role'];
+                                    $roleValue = $roleData['role'];
                                     
-                                    // Check if role is valid and not an array
-                                    if (!empty($role) && !is_array($role)) {
-                                        echo ucfirst(str_replace('_', ' ', $role));
+                                    // Ensure we have a valid string value
+                                    if (is_string($roleValue)) {
+                                        echo ucfirst(str_replace('_', ' ', $roleValue));
                                     } else {
                                         echo "User";
                                     }
@@ -923,6 +850,7 @@ include_once '../../includes/header.php';
                                     echo "User";
                                 }
                             } catch (Exception $e) {
+                                error_log("Error getting role: " . $e->getMessage());
                                 echo "System User";
                             }
                             ?>
@@ -974,8 +902,14 @@ include_once '../../includes/header.php';
                 <div class="form-container">
                     <div class="form-info alert-info">
                         <h3><i class="fas fa-info-circle"></i> Role Information</h3>
-                        <p><strong>Role Name:</strong> <?php echo htmlspecialchars($role['name']); ?></p>
-                        <p><strong>Description:</strong> <?php echo htmlspecialchars($role['description']); ?></p>
+                        <p><strong>Role Name:</strong> <?php 
+                            $roleName = is_string($role['name']) ? $role['name'] : 'Unknown Role';
+                            echo htmlspecialchars($roleName); 
+                        ?></p>
+                        <p><strong>Description:</strong> <?php 
+                            $roleDesc = is_string($role['description']) ? $role['description'] : '';
+                            echo htmlspecialchars($roleDesc); 
+                        ?></p>
                         <p><small>Assign permissions to this role by checking the appropriate boxes below. Users with this role will have all selected permissions.</small></p>
                     </div>
                     
@@ -985,54 +919,72 @@ include_once '../../includes/header.php';
                             <!-- Group permissions by module -->
                             <?php
                             $permissionGroups = [];
-                            
                             while ($permission = $permissionsResult->fetch_assoc()) {
-                                $module = explode('_', $permission['name'])[0];
-                                $module = ucfirst($module);
+                                // Ensure permission name is a string
+                                $permissionName = $permission['name'];
+                                if (is_array($permissionName)) {
+                                    error_log("Warning: Permission name is an array: " . print_r($permissionName, true));
+                                    $permissionName = "Unknown Permission";
+                                }
+                                
+                                // Get module name from permission name
+                                $parts = explode('_', (string)$permissionName);
+                                $module = !empty($parts[0]) ? ucfirst($parts[0]) : 'Other';
                                 
                                 if (!isset($permissionGroups[$module])) {
                                     $permissionGroups[$module] = [];
                                 }
                                 
-                                $permissionGroups[$module][] = $permission;
+                                // Store permission data with proper type casting
+                                $permissionGroups[$module][] = [
+                                    'id' => (int)$permission['id'],
+                                    'name' => (string)$permissionName,
+                                    'description' => isset($permission['description']) ? (string)$permission['description'] : ''
+                                ];
                             }
+                            ?>
                             
-                            foreach ($permissionGroups as $module => $permissions): ?>
-                                <div class="permissions-section">
-                                    <h3><?php echo $module; ?> Module</h3>
-                                    <div class="permissions-grid">
-                                        <?php foreach ($permissions as $permission): ?>
-                                            <div class="permission-item">
-                                                <input type="checkbox" 
-                                                       id="permission-<?php echo $permission['id']; ?>" 
-                                                       name="permissions[]" 
-                                                       value="<?php echo $permission['id']; ?>"
-                                                       <?php echo in_array($permission['id'], $currentPermissions) ? 'checked' : ''; ?>
-                                                       <?php echo ($isSystemRole && !hasRole('super_admin')) ? 'disabled' : ''; ?>>
-                                                <label for="permission-<?php echo $permission['id']; ?>">
-                                                    <?php 
-                                                    // Format permission name for display
-                                                    $displayName = str_replace('_', ' ', $permission['name']);
-                                                    $displayName = ucwords($displayName);
-                                                    echo $displayName; 
-                                                    ?>
-                                                    <span class="permission-description">
-                                                        <?php echo htmlspecialchars($permission['description']); ?>
-                                                    </span>
-                                                </label>
+                            <div class="permissions-grid">
+                                <?php foreach ($permissionGroups as $module => $modulePermissions): ?>
+                                    <div class="permission-group">
+                                        <div class="permission-group-header">
+                                            <h3><?php echo htmlspecialchars((string)$module); ?> Module</h3>
+                                            <div class="group-actions">
+                                                <button type="button" class="btn btn-sm btn-outline-primary select-all-btn" data-module="<?php echo htmlspecialchars((string)$module); ?>">
+                                                    Select All
+                                                </button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary deselect-all-btn" data-module="<?php echo htmlspecialchars((string)$module); ?>">
+                                                    Deselect All
+                                                </button>
                                             </div>
-                                        <?php endforeach; ?>
+                                        </div>
+                                        
+                                        <div class="permission-items">
+                                            <?php foreach ($modulePermissions as $permission): ?>
+                                                <div class="permission-item">
+                                                    <label class="permission-label">
+                                                        <input type="checkbox" 
+                                                               name="permissions[]" 
+                                                               value="<?php echo (int)$permission['id']; ?>"
+                                                               <?php echo in_array((int)$permission['id'], $currentPermissions) ? 'checked' : ''; ?>
+                                                               <?php echo ($isSystemRole && !hasRole('super_admin')) ? 'disabled' : ''; ?>>
+                                                        <div class="permission-details">
+                                                            <span class="permission-name">
+                                                                <?php echo htmlspecialchars(ucwords(str_replace('_', ' ', (string)$permission['name']))); ?>
+                                                            </span>
+                                                            <?php if (!empty($permission['description'])): ?>
+                                                                <span class="permission-description">
+                                                                    <?php echo htmlspecialchars((string)$permission['description']); ?>
+                                                                </span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </label>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
                                     </div>
-                                    <div class="permission-actions">
-                                        <button type="button" class="btn btn-sm btn-secondary select-all-btn" data-module="<?php echo $module; ?>">
-                                            <i class="fas fa-check-square"></i> Select All
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-secondary deselect-all-btn" data-module="<?php echo $module; ?>">
-                                            <i class="fas fa-square"></i> Deselect All
-                                        </button>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
+                                <?php endforeach; ?>
+                            </div>
                             
                             <div class="form-actions">
                                 <a href="list.php" class="btn btn-secondary">
