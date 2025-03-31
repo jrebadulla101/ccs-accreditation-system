@@ -70,25 +70,28 @@ A comprehensive web-based system for managing college accreditation processes, s
 ## Directory Structure
 
 ```
-admin/
-├── modules/
-│   ├── areas/         # Area level management
-│   ├── evidence/      # Evidence management
-│   ├── parameters/    # Parameter management
-│   ├── programs/      # Program management
-│   ├── roles/         # Role & permission management
-│   ├── settings/      # System settings
-│   └── users/         # User management
+htdocs/                  # Root directory
+├── index.php           # Main entry point & authentication
+├── dashboard.php       # Main dashboard
 ├── includes/
-│   ├── config.php     # Database & system configuration
-│   ├── functions.php  # Helper functions
-│   ├── header.php     # Common header template
-│   └── footer.php     # Common footer template
+│   ├── config.php      # Database & system configuration
+│   ├── functions.php   # Helper functions
+│   └── db.php         # Database connection handler
+├── admin/
+│   ├── logout.php      # Logout handler
+│   └── modules/
+│       ├── areas/      # Area level management
+│       ├── evidence/   # Evidence management
+│       ├── parameters/ # Parameter management
+│       ├── programs/   # Program management
+│       ├── roles/      # Role & permission management
+│       ├── settings/   # System settings
+│       └── users/      # User management
 ├── assets/
-│   ├── css/          # Stylesheets
-│   ├── js/           # JavaScript files
-│   └── images/       # System images
-└── uploads/          # File upload directory
+│   ├── css/           # Stylesheets
+│   ├── js/            # JavaScript files
+│   └── images/        # System images
+└── uploads/           # File upload directory
 ```
 
 ## Security Features
@@ -103,11 +106,14 @@ admin/
 ## Usage
 
 1. Access the system through your web browser
-2. Log in with your credentials
-3. Navigate through the modules using the sidebar
-4. Manage permissions through the role management interface
-5. Upload and organize evidence as needed
-6. Track accreditation progress through the dashboard
+2. The index page (`/index.php`) serves as both the landing page and authentication point
+3. Enter your credentials to log in
+4. You will be redirected to the dashboard upon successful login
+5. Navigate through the modules using the sidebar
+6. Manage permissions through the role management interface
+7. Upload and organize evidence as needed
+8. Track accreditation progress through the dashboard
+9. Use the logout function to securely end your session
 
 ## Default Credentials
 
