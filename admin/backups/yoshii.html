@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOSHII SYSTEM</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        body {
+            background: black;
+            color: green;
+            font-family: "Courier New", monospace;
+            text-align: center;
+            user-select: none;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+        }
+        #yoshii-text {
+            position: absolute;
+            top: 35%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 45px;
+            font-weight: bold;
+            color: red;
+            text-shadow: 0 0 15px white;
+            font-family: 'Arial Black', sans-serif;
+            animation: glitch 1.5s infinite alternate, typing 4s steps(12) forwards;
+            white-space: nowrap;
+            border-right: 3px solid red;
+            overflow: hidden;
+            width: 0;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #warning-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 22px;
+            font-weight: bold;
+            color: red;
+            text-shadow: 0 0 15px white;
+            font-family: 'Impact', sans-serif;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 5px;
+            animation: flicker 1.5s infinite alternate;
+        }
+        #system-mark {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 20px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 10px red;
+            font-family: 'Arial Black', sans-serif;
+            animation: flicker 2s infinite;
+        }
+        .warning-header {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 25px;
+            font-weight: bold;
+            color: red;
+            text-shadow: 0 0 15px white;
+            font-family: 'Arial Black', sans-serif;
+            animation: flicker 1.5s infinite alternate;
+        }
+        #copyright-footer {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 15px red;
+            font-family: 'Arial Black', sans-serif;
+            animation: flicker 3s infinite;
+        }
+        @keyframes glitch {
+            0% { transform: translate(-50%, -50%) skew(0deg, 0deg); }
+            20% { transform: translate(-49%, -51%) skew(2deg, -2deg); }
+            40% { transform: translate(-51%, -49%) skew(-2deg, 2deg); }
+            60% { transform: translate(-50%, -50%) skew(1deg, -1deg); }
+            80% { transform: translate(-50%, -50%) skew(-1deg, 1deg); }
+            100% { transform: translate(-50%, -50%) skew(0deg, 0deg); }
+        }
+        @keyframes typing {
+            from { width: 0; }
+            to { width: 100%; }
+        }
+        @keyframes flicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="matrix"></canvas>
+<div class="warning-header">⚠ SYSTEM BREACH DETECTED ⚠</div>
+<div id="yoshii-text" style="display: none;">WELCOME TO MY WORLD</div>
+<div id="warning-text" style="display: none;">
+    ⚠ **WARNING!** ⚠<br>
+    IF I FIND OUT THAT YOU'RE USING MY SYSTEM AS YOUR PERSONAL,  
+    I WILL INSTALL A **VIRUZ** ON YOUR SERVER.. 💀  
+    <br><br>
+    📜 **This Web System is Protected Under PH Copyright Law:**  
+    **Republic Act No. 8293 – Intellectual Property Code of the Philippines**  
+    **Chapter II, Section 172: Copyright Protection**  
+</div>
+<div id="system-mark" style="display: none;">THIS IS YOSHII SYSTEM MARK</div>
+<div id="copyright-footer" style="display: none;">© COPYRIGHT TO YOSHII 2025 💀</div>
+
+<audio id="typing-sound" src="https://freesound.org/data/previews/490/490853_10204151-lq.mp3"></audio>
+<audio id="static-noise" src="https://freesound.org/data/previews/414/414209_5121236-lq.mp3"></audio>
+
+<script>
+    // Play creepy typing sound
+    function playTypingSound() {
+        let audio = document.getElementById("typing-sound");
+        audio.volume = 0.5;
+        audio.play();
+    }
+
+    // Play random static noise
+    function playStaticNoise() {
+        let audio = document.getElementById("static-noise");
+        audio.volume = 0.3;
+        audio.play();
+    }
+
+    // Show alert when page is opened
+    window.onload = function() {
+        alert("HELLO EARTH CITIZEN!! 👁️👄👁️");
+        setTimeout(() => {
+            document.getElementById('yoshii-text').style.display = "block";
+            document.getElementById('system-mark').style.display = "block";
+            document.getElementById('warning-text').style.display = "block";
+            document.getElementById('copyright-footer').style.display = "block";
+            playTypingSound();
+        }, 2000);
+
+        setInterval(playStaticNoise, Math.random() * 10000 + 5000);
+    };
+
+    // Matrix background effect
+    const canvas = document.getElementById("matrix");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const letters = "ERROR YOSHII 010101 SYSTEM HACKED MALWARE DETECTED";
+    const matrix = letters.split("");
+
+    const fontSize = 18;
+    const columns = canvas.width / fontSize;
+    const drops = [];
+
+    for (let x = 0; x < columns; x++) {
+        drops[x] = 1;
+    }
+
+    function draw() {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = Math.random() > 0.9 ? "red" : "#0F0";
+        ctx.font = fontSize + "px monospace";
+
+        for (let i = 0; i < drops.length; i++) {
+            const text = matrix[Math.floor(Math.random() * matrix.length)];
+            ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+            if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                drops[i] = 0;
+            }
+            drops[i]++;
+        }
+    }
+
+    setInterval(draw, 50);
+</script>
+
+</body>
+</html>
