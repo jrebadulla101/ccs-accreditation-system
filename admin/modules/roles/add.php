@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     
     <style>
-    /* Base Variables and Reset */
+    /* Base Variables and Reset to gain the more local data and reset the main css file color*/
     :root {
         --primary-color: #4a90e2;
         --accent-color: #5C6BC0;
@@ -749,28 +749,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <div class="user-role">
                             <?php 
-                            // Use try-catch to handle any database errors gracefully
                             try {
-                                // Check if role_id column exists in admin_users table
-                                $checkRoleIdColumn = $conn->query("SHOW COLUMNS FROM admin_users LIKE 'role_id'");
-                                
-                                if ($checkRoleIdColumn && $checkRoleIdColumn->num_rows > 0) {
-                                    // If role_id column exists, join with roles table
-                                    $roleQuery = "SELECT r.name FROM admin_users au 
-                                               LEFT JOIN roles r ON au.role_id = r.id 
-                                               WHERE au.id = " . $_SESSION['admin_id'];
-                                } else {
-                                    // Otherwise, just use the role field directly
-                                    $roleQuery = "SELECT role FROM admin_users WHERE id = " . $_SESSION['admin_id'];
-                                }
-                                
-                                $roleResult = $conn->query($roleQuery);
+                                $roleQuery = "SELECT role FROM admin_users WHERE id = ?";
+                                $roleStmt = $conn->prepare($roleQuery);
+                                $adminId = $_SESSION['admin_id'];
+                                $roleStmt->bind_param("i", $adminId);
+                                $roleStmt->execute();
+                                $roleResult = $roleStmt->get_result();
                                 
                                 if ($roleResult && $roleResult->num_rows > 0) {
                                     $roleData = $roleResult->fetch_assoc();
-                                    echo ucfirst(isset($roleData['name']) ? $roleData['name'] : $roleData['role']);
+                                    echo ucfirst(str_replace('_', ' ', $roleData['role']));
                                 } else {
-                                    echo ucfirst($_SESSION['admin_role'] ?? "User");
+                                    echo "User";
                                 }
                             } catch (Exception $e) {
                                 echo "System User";

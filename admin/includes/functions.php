@@ -18,8 +18,30 @@ function requireLogin() {
 }
 
 // Check user role
-function hasRole($role) {
-    return isset($_SESSION['admin_role']) && $_SESSION['admin_role'] == $role;
+function hasRole($roleName) {
+    global $conn;
+    
+    if (!isset($_SESSION['admin_id'])) {
+        return false;
+    }
+    
+    try {
+        // Get role directly from admin_users table's enum field
+        $query = "SELECT role FROM admin_users WHERE id = ?";
+        $stmt = $conn->prepare($query);
+        $stmt->bind_param("i", $_SESSION['admin_id']);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if ($result && $result->num_rows > 0) {
+            $userData = $result->fetch_assoc();
+            return $userData['role'] === $roleName;
+        }
+    } catch (Exception $e) {
+        error_log("Error in hasRole function: " . $e->getMessage());
+    }
+    
+    return false;
 }
 
 // Clean input data

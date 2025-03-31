@@ -62,6 +62,152 @@ $activeUsers = ($activeUsersResult && $activeUsersResult->num_rows > 0) ? $activ
 
 // Count inactive users
 $inactiveUsers = $totalUsers - $activeUsers;
+
+// At the top of your file, add this helper function to safely display roles
+function getUserRoleDisplay($user) {
+    // If role is a string (direct field in users table)
+    if (isset($user['role']) && !is_array($user['role'])) {
+        return '<span class="badge badge-secondary">' . htmlspecialchars($user['role']) . '</span>';
+    }
+    
+    // If role_name is available (possibly from a join)
+    if (isset($user['role_name']) && !is_array($user['role_name'])) {
+        return '<span class="badge badge-secondary">' . htmlspecialchars($user['role_name']) . '</span>';
+    }
+    
+    // If there's a roles array (possibly from a separate query)
+    if (isset($user['roles'])) {
+        if (is_array($user['roles'])) {
+            $roleDisplay = '';
+            foreach ($user['roles'] as $key => $role) {
+                if (is_array($role)) {
+                    // If each role is an array (might have id and name)
+                    if (isset($role['name'])) {
+                        $roleDisplay .= '<span class="badge badge-secondary mr-1">' . htmlspecialchars($role['name']) . '</span>';
+                    } else {
+                        // Just show something if it's an array but we can't find a name
+                        $roleDisplay .= '<span class="badge badge-secondary mr-1">Role ' . htmlspecialchars($key) . '</span>';
+                    }
+                } else {
+                    // If each role is a string
+                    $roleDisplay .= '<span class="badge badge-secondary mr-1">' . htmlspecialchars($role) . '</span>';
+                }
+            }
+            return $roleDisplay ?: '<span class="text-muted">No role assigned</span>';
+        } else {
+            // If roles is there but not an array, display it safely
+            return '<span class="badge badge-secondary">' . htmlspecialchars((string)$user['roles']) . '</span>';
+        }
+    }
+    
+    // Default case - no role information found
+    return '<span class="text-muted">No role assigned</span>';
+}
+
+// Function to get user roles from junction table
+function getUserRoles($conn, $userId) {
+    $roles = [];
+    
+    // Check if user_roles table exists first
+    $tableExistsQuery = "SHOW TABLES LIKE 'user_roles'";
+    $tableExistsResult = $conn->query($tableExistsQuery);
+    if (!$tableExistsResult || $tableExistsResult->num_rows == 0) {
+        return [];
+    }
+    
+    $query = "SELECT r.id, r.name 
+              FROM roles r 
+              JOIN user_roles ur ON r.id = ur.role_id 
+              WHERE ur.user_id = ?";
+    
+    $stmt = $conn->prepare($query);
+    if (!$stmt) {
+        return [];
+    }
+    
+    $stmt->bind_param("i", $userId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    while ($role = $result->fetch_assoc()) {
+        $roles[] = [
+            'id' => $role['id'],
+            'name' => $role['name']
+        ];
+    }
+    
+    $stmt->close();
+    return $roles;
+}
+
+// This function should be added near the top of your file after database connection is established
+function getUserRoleNames($conn, $userId) {
+    // Query to get role names for a specific user
+    $query = "SELECT r.name 
+              FROM roles r 
+              JOIN user_roles ur ON r.id = ur.role_id 
+              WHERE ur.user_id = ?";
+    
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param("i", $userId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    $roleNames = [];
+    while ($role = $result->fetch_assoc()) {
+        $roleNames[] = $role['name'];
+    }
+    
+    return $roleNames;
+}
+
+function displayUserRoles($roles) {
+    // If roles is already a string (old data format), just return it
+    if (is_string($roles)) {
+        return '<span class="badge badge-primary">' . htmlspecialchars($roles) . '</span>';
+    }
+    
+    // If roles is an array, format each role as a badge
+    if (is_array($roles)) {
+        if (empty($roles)) {
+            return '<span class="text-muted">No roles assigned</span>';
+        }
+        
+        $output = '';
+        foreach ($roles as $role) {
+            // Handle if role is itself an array (containing id, name, etc.)
+            if (is_array($role)) {
+                if (isset($role['name'])) {
+                    $output .= '<span class="badge badge-primary mr-1">' . htmlspecialchars($role['name']) . '</span> ';
+                }
+            } else {
+                // Role is a simple string
+                $output .= '<span class="badge badge-primary mr-1">' . htmlspecialchars($role) . '</span> ';
+            }
+        }
+        return $output;
+    }
+    
+    // If roles is null or another unexpected type
+    return '<span class="text-muted">No roles assigned</span>';
+}
+
+// Then, modify your main user query section to fetch roles for each user:
+// Find where you're fetching users, which might look something like:
+$query = "SELECT * FROM admin_users ORDER BY id";
+$result = $conn->query($query);
+
+// After fetching users, add roles for each one:
+$users = [];
+if ($result) {
+    while ($user = $result->fetch_assoc()) {
+        // Get roles for this user
+        $user['roles'] = getUserRoles($conn, $user['id']);
+        $users[] = $user;
+    }
+}
+
+// Now when you display user data in your table row, use this for the roles column:
 ?>
 
 <!DOCTYPE html>
@@ -1071,9 +1217,15 @@ $inactiveUsers = $totalUsers - $activeUsers;
                                     <tbody>
                                         <?php 
                                         $counter = 1;
-                                        while ($user = $result->fetch_assoc()): 
+                                        // Reset result pointer in case it was moved
+                                        if ($result) { $result->data_seek(0); }
+                                        
+                                        while ($result && $user = $result->fetch_assoc()): 
                                             // Get user initials for avatar
                                             $initials = strtoupper(substr($user['full_name'], 0, 1));
+                                            
+                                            // Get user roles, only if the user_roles table exists
+                                            $userRoles = getUserRoles($conn, $user['id']);
                                             
                                             // Format last login date
                                             $lastLogin = isset($user['last_login']) && $user['last_login'] !== null ? 
@@ -1097,12 +1249,22 @@ $inactiveUsers = $totalUsers - $activeUsers;
                                             </td>
                                             <td>
                                                 <?php 
-                                                if ($hasRoleId && isset($user['role_name'])) {
-                                                    echo htmlspecialchars(ucfirst($user['role_name']));
-                                                } else {
-                                                    echo htmlspecialchars(ucfirst($user['role']));
-                                                }
-                                                ?>
+                                                // First check if we have roles from the junction table
+                                                if (!empty($userRoles)): ?>
+                                                    <?php foreach ($userRoles as $role): ?>
+                                                        <span class="badge badge-primary mr-1"><?php echo htmlspecialchars($role['name']); ?></span>
+                                                    <?php endforeach; ?>
+                                                <?php 
+                                                // Next check if we have a role_name from join
+                                                elseif (isset($user['role_name']) && !empty($user['role_name'])): ?>
+                                                    <span class="badge badge-primary"><?php echo htmlspecialchars($user['role_name']); ?></span>
+                                                <?php 
+                                                // Finally, fall back to the role column in admin_users
+                                                elseif (isset($user['role']) && !empty($user['role'])): ?>
+                                                    <span class="badge badge-primary"><?php echo htmlspecialchars($user['role']); ?></span>
+                                                <?php else: ?>
+                                                    <span class="text-muted">No role assigned</span>
+                                                <?php endif; ?>
                                             </td>
                                             <td><?php echo $lastLogin; ?></td>
                                             <td>

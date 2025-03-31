@@ -11,7 +11,7 @@ if (!hasPermission('view_users')) {
 }
 
 // Get user ID from URL
-$userId = isset($_GET['id']) ? intval($_GET['id']) : 0;
+$userId = isset($_GET['user_id']) ? intval($_GET['user_id']) : (isset($_GET['id']) ? intval($_GET['id']) : 0);
 
 if ($userId <= 0) {
     setFlashMessage("danger", "Invalid user ID.");

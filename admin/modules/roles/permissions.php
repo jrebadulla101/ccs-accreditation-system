@@ -15,9 +15,17 @@ if (!isset($_SESSION['admin_id'])) {
 }
 
 // Check if user has permission to manage roles
-if (!hasRole('super_admin')) {
-    setFlashMessage("danger", "You don't have permission to access this page.");
-    header("Location: ../../dashboard.php");
+$adminId = $_SESSION['admin_id'];
+$roleQuery = "SELECT role FROM admin_users WHERE id = ?";
+$roleStmt = $conn->prepare($roleQuery);
+$roleStmt->bind_param("i", $adminId);
+$roleStmt->execute();
+$roleResult = $roleStmt->get_result();
+$roleData = $roleResult->fetch_assoc();
+
+if ($roleData['role'] !== 'super_admin') {
+    setFlashMessage("danger", "You don't have permission to manage permissions.");
+    header("Location: list.php");
     exit();
 }
 
@@ -25,7 +33,7 @@ if (!hasRole('super_admin')) {
 $roleId = isset($_GET['role_id']) ? intval($_GET['role_id']) : 0;
 
 if ($roleId <= 0) {
-    setFlashMessage("danger", "Role ID is required.");
+    setFlashMessage("danger", "Invalid role ID.");
     header("Location: list.php");
     exit();
 }
@@ -45,44 +53,63 @@ if ($roleResult->num_rows === 0) {
 
 $role = $roleResult->fetch_assoc();
 
-// Handle form submission to update permissions
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    // First, delete all existing permissions for this role
-    $deleteQuery = "DELETE FROM role_permissions WHERE role_id = ?";
-    $deleteStmt = $conn->prepare($deleteQuery);
-    $deleteStmt->bind_param("i", $roleId);
-    $deleteStmt->execute();
-    
-    // Then, add the selected permissions
-    if (isset($_POST['permissions']) && is_array($_POST['permissions'])) {
-        $insertQuery = "INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)";
-        $insertStmt = $conn->prepare($insertQuery);
-        
-        foreach ($_POST['permissions'] as $permissionId) {
-            $insertStmt->bind_param("ii", $roleId, $permissionId);
-            $insertStmt->execute();
-        }
-    }
-    
-    // Log activity
-    $userId = $_SESSION['admin_id'];
-    $activityType = "role_permissions_update";
-    $activityDescription = "Updated permissions for role '{$role['name']}'";
-    $ipAddress = $_SERVER['REMOTE_ADDR'];
-    $userAgent = $_SERVER['HTTP_USER_AGENT'];
-    
-    $logQuery = "INSERT INTO activity_logs (user_id, activity_type, description, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)";
-    $logStmt = $conn->prepare($logQuery);
-    $logStmt->bind_param("issss", $userId, $activityType, $activityDescription, $ipAddress, $userAgent);
-    $logStmt->execute();
-    
-    setFlashMessage("success", "Permissions updated successfully for " . $role['name']);
-    header("Location: permissions.php?role_id=" . $roleId);
+// Check if it's a system role (cannot be edited)
+$isSystemRole = in_array($role['name'], ['super_admin']);
+if ($isSystemRole && !hasRole('super_admin')) {
+    setFlashMessage("danger", "System roles can only be edited by super admin.");
+    header("Location: list.php");
     exit();
 }
 
+// Handle form submission to update permissions
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    // Begin transaction
+    $conn->begin_transaction();
+    
+    try {
+        // Delete all existing permissions for this role
+        $deleteQuery = "DELETE FROM role_permissions WHERE role_id = ?";
+        $deleteStmt = $conn->prepare($deleteQuery);
+        $deleteStmt->bind_param("i", $roleId);
+        $deleteStmt->execute();
+        
+        // Insert new permissions
+        if (isset($_POST['permissions']) && is_array($_POST['permissions'])) {
+            $insertQuery = "INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)";
+            $insertStmt = $conn->prepare($insertQuery);
+            
+            foreach ($_POST['permissions'] as $permissionId) {
+                $insertStmt->bind_param("ii", $roleId, $permissionId);
+                $insertStmt->execute();
+            }
+        }
+        
+        // Log activity
+        $userId = $_SESSION['admin_id'];
+        $activityType = "permissions_updated";
+        $activityDescription = "Updated permissions for role: {$role['name']}";
+        $ipAddress = $_SERVER['REMOTE_ADDR'];
+        
+        $logQuery = "INSERT INTO activity_logs (user_id, activity_type, description, ip_address) VALUES (?, ?, ?, ?)";
+        $logStmt = $conn->prepare($logQuery);
+        $logStmt->bind_param("isss", $userId, $activityType, $activityDescription, $ipAddress);
+        $logStmt->execute();
+        
+        // Commit transaction
+        $conn->commit();
+        
+        setFlashMessage("success", "Permissions updated successfully.");
+        header("Location: permissions.php?role_id=" . $roleId);
+        exit();
+    } catch (Exception $e) {
+        // Rollback transaction on error
+        $conn->rollback();
+        $errorMessage = "Failed to update permissions: " . $e->getMessage();
+    }
+}
+
 // Get all available permissions
-$permissionsQuery = "SELECT * FROM permissions ORDER BY name ASC";
+$permissionsQuery = "SELECT * FROM permissions ORDER BY name";
 $permissionsResult = $conn->query($permissionsQuery);
 
 // Get current permissions for this role
@@ -96,7 +123,82 @@ $currentPermissions = [];
 while ($row = $currentPermissionsResult->fetch_assoc()) {
     $currentPermissions[] = $row['permission_id'];
 }
+
+// Include header
+include_once '../../includes/header.php';
 ?>
+
+<div class="content-wrapper">
+    <div class="page-header">
+        <h1>Manage Role Permissions</h1>
+        <nav class="breadcrumb-container">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="../../dashboard.php">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="list.php">Roles</a></li>
+                <li class="breadcrumb-item active">Manage Permissions</li>
+            </ol>
+        </nav>
+    </div>
+
+    <?php if (isset($errorMessage)): ?>
+        <div class="alert alert-danger">
+            <?php echo $errorMessage; ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (isset($_SESSION['flash_message'])): ?>
+        <div class="alert alert-<?php echo $_SESSION['flash_message_type']; ?>">
+            <?php 
+            echo $_SESSION['flash_message']; 
+            unset($_SESSION['flash_message']);
+            unset($_SESSION['flash_message_type']);
+            ?>
+        </div>
+    <?php endif; ?>
+
+    <div class="card">
+        <div class="card-header">
+            <h2>Permissions for Role: <?php echo htmlspecialchars($role['name']); ?></h2>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="">
+                <div class="permissions-grid">
+                    <?php if ($permissionsResult && $permissionsResult->num_rows > 0): ?>
+                        <?php while ($permission = $permissionsResult->fetch_assoc()): ?>
+                            <div class="permission-item">
+                                <label class="checkbox-container">
+                                    <input type="checkbox" 
+                                           name="permissions[]" 
+                                           value="<?php echo $permission['id']; ?>"
+                                           <?php echo in_array($permission['id'], $currentPermissions) ? 'checked' : ''; ?>
+                                           <?php echo ($isSystemRole && !hasRole('super_admin')) ? 'disabled' : ''; ?>>
+                                    <span class="checkmark"></span>
+                                    <?php echo htmlspecialchars($permission['name']); ?>
+                                </label>
+                                <?php if ($permission['description']): ?>
+                                    <div class="permission-description">
+                                        <?php echo htmlspecialchars($permission['description']); ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endwhile; ?>
+                    <?php else: ?>
+                        <p>No permissions found.</p>
+                    <?php endif; ?>
+                </div>
+
+                <div class="form-actions">
+                    <a href="list.php" class="btn btn-secondary">Cancel</a>
+                    <?php if (!$isSystemRole || hasRole('super_admin')): ?>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <?php endif; ?>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<?php include_once '../../includes/footer.php'; ?>
 
 <!DOCTYPE html>
 <html lang="en">
@@ -797,28 +899,28 @@ while ($row = $currentPermissionsResult->fetch_assoc()) {
                         </div>
                         <div class="user-role">
                             <?php 
-                            // Use try-catch to handle any database errors gracefully
                             try {
-                                // Check if role_id column exists in admin_users table
-                                $checkRoleIdColumn = $conn->query("SHOW COLUMNS FROM admin_users LIKE 'role_id'");
-                                
-                                if ($checkRoleIdColumn && $checkRoleIdColumn->num_rows > 0) {
-                                    // If role_id column exists, join with roles table
-                                    $roleQuery = "SELECT r.name FROM admin_users au 
-                                               LEFT JOIN roles r ON au.role_id = r.id 
-                                               WHERE au.id = " . $_SESSION['admin_id'];
-                                } else {
-                                    // Otherwise, just use the role field directly
-                                    $roleQuery = "SELECT role FROM admin_users WHERE id = " . $_SESSION['admin_id'];
-                                }
-                                
-                                $roleResult = $conn->query($roleQuery);
+                                // Get role directly from admin_users table
+                                $roleQuery = "SELECT role FROM admin_users WHERE id = ?";
+                                $roleStmt = $conn->prepare($roleQuery);
+                                $adminId = $_SESSION['admin_id'];
+                                $roleStmt->bind_param("i", $adminId);
+                                $roleStmt->execute();
+                                $roleResult = $roleStmt->get_result();
                                 
                                 if ($roleResult && $roleResult->num_rows > 0) {
                                     $roleData = $roleResult->fetch_assoc();
-                                    echo ucfirst(isset($roleData['name']) ? $roleData['name'] : $roleData['role']);
+                                    // Get the role from the enum field
+                                    $role = $roleData['role'];
+                                    
+                                    // Check if role is valid and not an array
+                                    if (!empty($role) && !is_array($role)) {
+                                        echo ucfirst(str_replace('_', ' ', $role));
+                                    } else {
+                                        echo "User";
+                                    }
                                 } else {
-                                    echo ucfirst($_SESSION['admin_role'] ?? "User");
+                                    echo "User";
                                 }
                             } catch (Exception $e) {
                                 echo "System User";
@@ -905,7 +1007,8 @@ while ($row = $currentPermissionsResult->fetch_assoc()) {
                                                        id="permission-<?php echo $permission['id']; ?>" 
                                                        name="permissions[]" 
                                                        value="<?php echo $permission['id']; ?>"
-                                                       <?php echo in_array($permission['id'], $currentPermissions) ? 'checked' : ''; ?>>
+                                                       <?php echo in_array($permission['id'], $currentPermissions) ? 'checked' : ''; ?>
+                                                       <?php echo ($isSystemRole && !hasRole('super_admin')) ? 'disabled' : ''; ?>>
                                                 <label for="permission-<?php echo $permission['id']; ?>">
                                                     <?php 
                                                     // Format permission name for display
@@ -935,9 +1038,11 @@ while ($row = $currentPermissionsResult->fetch_assoc()) {
                                 <a href="list.php" class="btn btn-secondary">
                                     <i class="fas fa-arrow-left"></i> Back to Roles
                                 </a>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-save"></i> Save Permissions
-                                </button>
+                                <?php if (!$isSystemRole || hasRole('super_admin')): ?>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save"></i> Save Permissions
+                                    </button>
+                                <?php endif; ?>
                             </div>
                             
                         <?php else: ?>

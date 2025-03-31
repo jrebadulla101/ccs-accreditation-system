@@ -22,7 +22,7 @@ if (!hasRole('super_admin')) {
 }
 
 // Get all roles
-$query = "SELECT r.*, 
+$query = "SELECT r.id, r.name, r.description, 
          (SELECT COUNT(*) FROM user_roles WHERE role_id = r.id) as user_count,
          (SELECT COUNT(*) FROM role_permissions WHERE role_id = r.id) as permission_count
          FROM roles r ORDER BY r.name ASC";
@@ -727,35 +727,30 @@ $result = $conn->query($query);
                 <div class="user-menu">
                     <div class="user-info">
                         <div class="user-name">
-                            <?php echo $_SESSION['admin_name']; ?>
+                            <?php echo htmlspecialchars($_SESSION['admin_name']); ?>
                         </div>
                         <div class="user-role">
                             <?php 
-                            // Use try-catch to handle any database errors gracefully
                             try {
-                                // Check if role_id column exists in admin_users table
-                                $checkRoleIdColumn = $conn->query("SHOW COLUMNS FROM admin_users LIKE 'role_id'");
-                                
-                                if ($checkRoleIdColumn && $checkRoleIdColumn->num_rows > 0) {
-                                    // If role_id column exists, join with roles table
-                                    $roleQuery = "SELECT r.name FROM admin_users au 
-                                               LEFT JOIN roles r ON au.role_id = r.id 
-                                               WHERE au.id = " . $_SESSION['admin_id'];
-                                } else {
-                                    // Otherwise, just use the role field directly
-                                    $roleQuery = "SELECT role FROM admin_users WHERE id = " . $_SESSION['admin_id'];
-                                }
-                                
-                                $roleResult = $conn->query($roleQuery);
+                                // Get role directly from admin_users table's enum field
+                                $adminId = $_SESSION['admin_id'];
+                                $roleQuery = "SELECT role FROM admin_users WHERE id = ?";
+                                $roleStmt = $conn->prepare($roleQuery);
+                                $roleStmt->bind_param("i", $adminId);
+                                $roleStmt->execute();
+                                $roleResult = $roleStmt->get_result();
                                 
                                 if ($roleResult && $roleResult->num_rows > 0) {
                                     $roleData = $roleResult->fetch_assoc();
-                                    echo ucfirst(isset($roleData['name']) ? $roleData['name'] : $roleData['role']);
+                                    // Get the role from the enum field
+                                    $role = $roleData['role'];
+                                    echo ucfirst(str_replace('_', ' ', $role));
                                 } else {
-                                    echo ucfirst($_SESSION['admin_role'] ?? "User");
+                                    echo "User";
                                 }
                             } catch (Exception $e) {
-                                echo "System User";
+                                error_log("Error getting role: " . $e->getMessage());
+                                echo "User";
                             }
                             ?>
                         </div>
@@ -831,11 +826,15 @@ $result = $conn->query($query);
                                             <td><?php echo $row['permission_count']; ?></td>
                                             <td class="action-buttons">
                                                 <a href="view.php?id=<?php echo $row['id']; ?>" class="btn btn-icon btn-info" title="View"><i class="fas fa-eye"></i></a>
+                                                <?php if (hasPermission('edit_role')): ?>
                                                 <a href="edit.php?id=<?php echo $row['id']; ?>" class="btn btn-icon btn-primary" title="Edit"><i class="fas fa-edit"></i></a>
-                                                <?php if ($row['name'] != 'super_admin'): ?>
-                                                    <a href="delete.php?id=<?php echo $row['id']; ?>" class="btn btn-icon btn-danger" title="Delete" onclick="return confirm('Are you sure you want to delete this role?');"><i class="fas fa-trash-alt"></i></a>
                                                 <?php endif; ?>
+                                                <?php if (hasPermission('delete_role') && $row['name'] != 'super_admin'): ?>
+                                                <a href="delete.php?id=<?php echo $row['id']; ?>" class="btn btn-icon btn-danger" title="Delete" onclick="return confirm('Are you sure you want to delete this role?');"><i class="fas fa-trash-alt"></i></a>
+                                                <?php endif; ?>
+                                                <?php if (hasPermission('manage_permissions')): ?>
                                                 <a href="permissions.php?role_id=<?php echo $row['id']; ?>" class="btn btn-icon btn-secondary" title="Manage Permissions"><i class="fas fa-key"></i></a>
+                                                <?php endif; ?>
                                             </td>
                                         </tr>
                                     <?php endwhile; ?>

@@ -443,7 +443,32 @@ $isSystemRole = in_array($role['name'], ['super_admin', 'admin']);
             </div>
             
             <div class="user-dropdown">
-                <!-- User dropdown content here -->
+                <div class="user-info">
+                    <div class="user-name">
+                        <?php echo $_SESSION['admin_name']; ?>
+                    </div>
+                    <div class="user-role">
+                        <?php 
+                        try {
+                            $roleQuery = "SELECT role FROM admin_users WHERE id = ?";
+                            $roleStmt = $conn->prepare($roleQuery);
+                            $adminId = $_SESSION['admin_id'];
+                            $roleStmt->bind_param("i", $adminId);
+                            $roleStmt->execute();
+                            $roleResult = $roleStmt->get_result();
+                            
+                            if ($roleResult && $roleResult->num_rows > 0) {
+                                $roleData = $roleResult->fetch_assoc();
+                                echo ucfirst(str_replace('_', ' ', $roleData['role']));
+                            } else {
+                                echo "User";
+                            }
+                        } catch (Exception $e) {
+                            echo "System User";
+                        }
+                        ?>
+                    </div>
+                </div>
             </div>
         </div>
         

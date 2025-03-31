@@ -1,23 +1,35 @@
 <?php
-// Adjust the relative path as needed
+// Include configuration and start session before any output
+require_once '../../includes/config.php';
+session_start();
+
+// Include functions
+require_once '../../includes/functions.php';
+
+// Set base path
 $basePath = '../../';
-include $basePath . 'includes/header.php';
+
+// Check if user is logged in
+if (!isset($_SESSION['admin_id'])) {
+    header("Location: " . $basePath . "login.php");
+    exit();
+}
 
 // Check if user has permission to assign roles
 if (!hasPermission('assign_roles')) {
     setFlashMessage("danger", "You don't have permission to assign roles.");
-    header("Location: " . $basePath . "dashboard.php");
+    header("Location: list.php");
     exit();
-}
+}   
 
-// Get user_id from URL
-$userId = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
-
-if ($userId <= 0) {
-    setFlashMessage("danger", "User ID is required.");
+// Check if user ID is provided
+if (!isset($_GET['user_id']) || empty($_GET['user_id'])) {
+    setFlashMessage("danger", "No user ID provided.");
     header("Location: list.php");
     exit();
 }
+
+$userId = intval($_GET['user_id']);
 
 // Get user details
 $userQuery = "SELECT * FROM admin_users WHERE id = ?";
@@ -34,75 +46,77 @@ if ($userResult->num_rows === 0) {
 
 $user = $userResult->fetch_assoc();
 
-// Handle form submission to update roles
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    // First, delete all existing roles for this user
-    $deleteQuery = "DELETE FROM user_roles WHERE user_id = ?";
-    $deleteStmt = $conn->prepare($deleteQuery);
-    $deleteStmt->bind_param("i", $userId);
-    $deleteStmt->execute();
-    
-    // Then, add the selected roles
-    if (isset($_POST['roles']) && is_array($_POST['roles'])) {
-        $insertQuery = "INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)";
-        $insertStmt = $conn->prepare($insertQuery);
-        
-        foreach ($_POST['roles'] as $roleId) {
-            $insertStmt->bind_param("ii", $userId, $roleId);
-            $insertStmt->execute();
-        }
-    }
-    
-    // Update user's primary role in admin_users table
-    if (isset($_POST['primary_role']) && $_POST['primary_role']) {
-        $primaryRoleQuery = "SELECT name FROM roles WHERE id = ?";
-        $primaryRoleStmt = $conn->prepare($primaryRoleQuery);
-        $primaryRoleStmt->bind_param("i", $_POST['primary_role']);
-        $primaryRoleStmt->execute();
-        $primaryRoleResult = $primaryRoleStmt->get_result();
-        
-        if ($primaryRoleResult->num_rows > 0) {
-            $primaryRole = $primaryRoleResult->fetch_assoc()['name'];
-            
-            $updateUserQuery = "UPDATE admin_users SET role = ? WHERE id = ?";
-            $updateUserStmt = $conn->prepare($updateUserQuery);
-            $updateUserStmt->bind_param("si", $primaryRole, $userId);
-            $updateUserStmt->execute();
-        }
-    }
-    
-    // Log activity
-    $adminId = $_SESSION['admin_id'];
-    $activityType = "user_roles_update";
-    $activityDescription = "Updated roles for user '{$user['full_name']}'";
-    $ipAddress = $_SERVER['REMOTE_ADDR'];
-    $userAgent = $_SERVER['HTTP_USER_AGENT'];
-    
-    $logQuery = "INSERT INTO activity_logs (user_id, activity_type, description, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)";
-    $logStmt = $conn->prepare($logQuery);
-    $logStmt->bind_param("issss", $adminId, $activityType, $activityDescription, $ipAddress, $userAgent);
-    $logStmt->execute();
-    
-    setFlashMessage("success", "Roles updated successfully for " . $user['full_name']);
-    header("Location: view.php?id=" . $userId);
-    exit();
-}
-
 // Get all available roles
-$rolesQuery = "SELECT * FROM roles ORDER BY name ASC";
+$rolesQuery = "SELECT id, name, description FROM roles ORDER BY name";
 $rolesResult = $conn->query($rolesQuery);
+$roles = $rolesResult->fetch_all(MYSQLI_ASSOC);
 
-// Get current roles for this user
-$currentRolesQuery = "SELECT role_id FROM user_roles WHERE user_id = ?";
-$currentRolesStmt = $conn->prepare($currentRolesQuery);
-$currentRolesStmt->bind_param("i", $userId);
-$currentRolesStmt->execute();
-$currentRolesResult = $currentRolesStmt->get_result();
+// Get user's current roles
+$userRolesQuery = "SELECT role_id FROM user_roles WHERE user_id = ?";
+$userRolesStmt = $conn->prepare($userRolesQuery);
+$userRolesStmt->bind_param("i", $userId);
+$userRolesStmt->execute();
+$userRolesResult = $userRolesStmt->get_result();
 
-$currentRoles = [];
-while ($row = $currentRolesResult->fetch_assoc()) {
-    $currentRoles[] = $row['role_id'];
+$userRoles = [];
+while ($role = $userRolesResult->fetch_assoc()) {
+    $userRoles[] = $role['role_id'];
 }
+
+// Handle form submission - process before any HTML output
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    $selectedRoles = isset($_POST['roles']) ? $_POST['roles'] : [];
+    
+    // Begin transaction
+    $conn->begin_transaction();
+    
+    try {
+        // Delete all current role assignments
+        $deleteQuery = "DELETE FROM user_roles WHERE user_id = ?";
+        $deleteStmt = $conn->prepare($deleteQuery);
+        $deleteStmt->bind_param("i", $userId);
+        $deleteStmt->execute();
+        
+        // Insert new role assignments
+        if (!empty($selectedRoles)) {
+            $insertQuery = "INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)";
+            $insertStmt = $conn->prepare($insertQuery);
+            
+            foreach ($selectedRoles as $roleId) {
+                $insertStmt->bind_param("ii", $userId, $roleId);
+                $insertStmt->execute();
+            }
+        }
+        
+        // Log activity
+        $adminId = $_SESSION['admin_id'];
+        $activityType = "roles_assigned";
+        $activityDescription = "Assigned roles to user: {$user['full_name']} (ID: $userId)";
+        
+        $logQuery = "INSERT INTO activity_logs (user_id, activity_type, description, ip_address) 
+                    VALUES (?, ?, ?, ?)";
+        $logStmt = $conn->prepare($logQuery);
+        $ipAddress = $_SERVER['REMOTE_ADDR'];
+        $logStmt->bind_param("isss", $adminId, $activityType, $activityDescription, $ipAddress);
+        $logStmt->execute();
+        
+        // Commit transaction
+        $conn->commit();
+        
+        setFlashMessage("success", "Roles assigned successfully.");
+        header("Location: view.php?user_id=" . $userId);
+        exit();
+    } catch (Exception $e) {
+        // Rollback transaction on error
+        $conn->rollback();
+        
+        // Store error message in a variable instead of immediately outputting it
+        $errorMessage = "Failed to assign roles. Error: " . $e->getMessage();
+    }
+}
+
+// Include header after all potential redirects
+include_once $basePath . 'includes/header.php';
 ?>
 
 <div class="content-wrapper">
@@ -112,48 +126,64 @@ while ($row = $currentRolesResult->fetch_assoc()) {
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="<?php echo $basePath; ?>dashboard.php">Dashboard</a></li>
                 <li class="breadcrumb-item"><a href="list.php">Users</a></li>
-                <li class="breadcrumb-item"><a href="view.php?id=<?php echo $userId; ?>"><?php echo htmlspecialchars($user['full_name']); ?></a></li>
+                <li class="breadcrumb-item"><a href="view.php?user_id=<?php echo $userId; ?>"><?php echo htmlspecialchars($user['full_name']); ?></a></li>
                 <li class="breadcrumb-item active">Assign Roles</li>
             </ol>
         </nav>
     </div>
 
+    <?php if (isset($errorMessage)): ?>
+    <div class="alert alert-danger"><?php echo $errorMessage; ?></div>
+    <?php endif; ?>
+
+    <?php if (isset($_SESSION['flash_message'])): ?>
+    <div class="alert alert-<?php echo $_SESSION['flash_message_type']; ?> alert-dismissible fade show">
+        <?php echo $_SESSION['flash_message']; ?>
+        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+        </button>
+    </div>
+    <?php
+    // Clear the flash message
+    unset($_SESSION['flash_message']);
+    unset($_SESSION['flash_message_type']);
+    ?>
+    <?php endif; ?>
+
     <div class="form-container">
-        <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"] . "?user_id=" . $userId); ?>" method="post">
+        <form method="POST" action="">
             <div class="form-info mb-3">
                 <p><strong>User:</strong> <?php echo htmlspecialchars($user['full_name']); ?> (<?php echo htmlspecialchars($user['username']); ?>)</p>
                 <p><strong>Email:</strong> <?php echo htmlspecialchars($user['email']); ?></p>
-                <p><strong>Current Primary Role:</strong> <?php echo ucfirst(str_replace('_', ' ', $user['role'])); ?></p>
+                <p><strong>Role:</strong> <?php echo ucfirst(str_replace('_', ' ', $user['role'])); ?></p>
             </div>
             
             <div class="roles-section">
-                <h3>Select Roles</h3>
+                <h3>Select Roles to Assign</h3>
                 
                 <div class="alert alert-info">
-                    <i class="fas fa-info-circle"></i> Assign roles to define what actions this user can perform in the system. Select a primary role to determine the user's main responsibilities.
+                    <i class="fas fa-info-circle"></i> Assigning roles determines the user's permissions and access levels within the system.
                 </div>
                 
-                <?php if ($rolesResult && $rolesResult->num_rows > 0): ?>
-                    <div class="roles-list">
-                        <?php while ($role = $rolesResult->fetch_assoc()): ?>
-                            <div class="role-assignment-item">
-                                <div class="role-checkbox">
-                                    <input type="checkbox" id="role_<?php echo $role['id']; ?>" name="roles[]" value="<?php echo $role['id']; ?>" 
-                                           <?php echo in_array($role['id'], $currentRoles) ? 'checked' : ''; ?>>
-                                    <label for="role_<?php echo $role['id']; ?>"><?php echo ucfirst(str_replace('_', ' ', htmlspecialchars($role['name']))); ?></label>
-                                </div>
-                                
-                                <div class="primary-role-radio">
-                                    <input type="radio" id="primary_<?php echo $role['id']; ?>" name="primary_role" value="<?php echo $role['id']; ?>" 
-                                           <?php echo ($user['role'] == $role['name']) ? 'checked' : ''; ?>>
-                                    <label for="primary_<?php echo $role['id']; ?>">Primary Role</label>
-                                </div>
-                                
-                                <div class="role-description">
-                                    <?php echo htmlspecialchars($role['description']); ?>
-                                </div>
+                <?php if (!empty($roles)): ?>
+                    <div class="roles-grid">
+                        <?php foreach ($roles as $role): ?>
+                            <div class="role-item">
+                                <input type="checkbox" id="role_<?php echo $role['id']; ?>" name="roles[]" value="<?php echo $role['id']; ?>" 
+                                       <?php echo in_array($role['id'], $userRoles) ? 'checked' : ''; ?>>
+                                <label for="role_<?php echo $role['id']; ?>">
+                                    <strong><?php echo htmlspecialchars($role['name']); ?></strong>
+                                    <?php if (!empty($role['description'])): ?>
+                                        <p class="text-muted small"><?php echo htmlspecialchars($role['description']); ?></p>
+                                    <?php endif; ?>
+                                </label>
                             </div>
-                        <?php endwhile; ?>
+                        <?php endforeach; ?>
+                    </div>
+                    
+                    <div class="assignment-actions">
+                        <button type="button" id="select-all" class="btn btn-sm btn-secondary">Select All</button>
+                        <button type="button" id="deselect-all" class="btn btn-sm btn-secondary">Deselect All</button>
                     </div>
                 <?php else: ?>
                     <div class="no-data-message">
@@ -164,42 +194,236 @@ while ($row = $currentRolesResult->fetch_assoc()) {
             </div>
             
             <div class="form-actions">
-                <a href="view.php?id=<?php echo $userId; ?>" class="btn btn-secondary">Cancel</a>
-                <button type="submit" class="btn btn-primary">Save Roles</button>
+                <a href="view.php?user_id=<?php echo $userId; ?>" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">Save Role Assignments</button>
             </div>
         </form>
     </div>
 </div>
 
+<style>
+.content-wrapper {
+    padding: 20px;
+    background: #f8f9fc;
+    min-height: calc(100vh - 60px);
+}
+
+.page-header {
+    margin-bottom: 30px;
+}
+
+.page-header h1 {
+    color: #4e73df;
+    font-size: 24px;
+    margin-bottom: 10px;
+}
+
+.breadcrumb-container {
+    background: #fff;
+    padding: 10px 15px;
+    border-radius: 5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.breadcrumb {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.breadcrumb-item {
+    color: #858796;
+    font-size: 14px;
+}
+
+.breadcrumb-item a {
+    color: #4e73df;
+    text-decoration: none;
+}
+
+.breadcrumb-item.active {
+    color: #4e73df;
+    font-weight: 500;
+}
+
+.form-container {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    padding: 25px;
+}
+
+.form-info {
+    background: #f8f9fc;
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
+
+.form-info p {
+    margin: 5px 0;
+    color: #5a5c69;
+}
+
+.roles-section {
+    margin-top: 20px;
+}
+
+.roles-section h3 {
+    color: #4e73df;
+    font-size: 18px;
+    margin-bottom: 15px;
+}
+
+.roles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.role-item {
+    background: #f8f9fc;
+    border: 1px solid #e3e6f0;
+    border-radius: 5px;
+    padding: 15px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.role-item input[type="checkbox"] {
+    margin-top: 3px;
+}
+
+.role-item label {
+    flex: 1;
+    margin: 0;
+    cursor: pointer;
+}
+
+.role-item label strong {
+    color: #4e73df;
+    display: block;
+    margin-bottom: 5px;
+}
+
+.role-item .text-muted {
+    color: #858796 !important;
+    font-size: 13px;
+    margin: 0;
+}
+
+.assignment-actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.form-actions {
+    margin-top: 30px;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.btn {
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #4e73df;
+    border-color: #4e73df;
+}
+
+.btn-primary:hover {
+    background: #2e59d9;
+    border-color: #2653d4;
+}
+
+.btn-secondary {
+    background: #858796;
+    border-color: #858796;
+}
+
+.btn-secondary:hover {
+    background: #717384;
+    border-color: #6b6d7d;
+}
+
+.alert {
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
+
+.alert-info {
+    background: #cce5ff;
+    border-color: #b8daff;
+    color: #004085;
+}
+
+.alert-danger {
+    background: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+}
+
+.no-data-message {
+    text-align: center;
+    padding: 30px;
+    background: #f8f9fc;
+    border-radius: 5px;
+    color: #858796;
+}
+
+.no-data-message i {
+    font-size: 24px;
+    margin-bottom: 10px;
+    color: #4e73df;
+}
+
+@media (max-width: 768px) {
+    .roles-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .form-actions {
+        flex-direction: column;
+    }
+    
+    .form-actions .btn {
+        width: 100%;
+    }
+}
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // When a role checkbox is unchecked, also uncheck its primary role
-    const roleCheckboxes = document.querySelectorAll('input[name="roles[]"]');
-    roleCheckboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            const roleId = this.value;
-            const primaryRadio = document.getElementById('primary_' + roleId);
-            
-            if (!this.checked && primaryRadio && primaryRadio.checked) {
-                primaryRadio.checked = false;
-            }
-        });
-    });
+    const selectAllBtn = document.getElementById('select-all');
+    const deselectAllBtn = document.getElementById('deselect-all');
     
-    // When a primary role is selected, ensure its role checkbox is checked
-    const primaryRadios = document.querySelectorAll('input[name="primary_role"]');
-    primaryRadios.forEach(radio => {
-        radio.addEventListener('change', function() {
-            if (this.checked) {
-                const roleId = this.value;
-                const roleCheckbox = document.getElementById('role_' + roleId);
-                
-                if (roleCheckbox && !roleCheckbox.checked) {
-                    roleCheckbox.checked = true;
-                }
-            }
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', function() {
+            document.querySelectorAll('input[name="roles[]"]').forEach(checkbox => {
+                checkbox.checked = true;
+            });
         });
-    });
+    }
+    
+    if (deselectAllBtn) {
+        deselectAllBtn.addEventListener('click', function() {
+            document.querySelectorAll('input[name="roles[]"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+        });
+    }
 });
 </script>
 

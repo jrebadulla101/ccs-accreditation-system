@@ -66,7 +66,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $logStmt->execute();
     
     setFlashMessage("success", "Program assignments updated successfully for " . $user['full_name']);
-    header("Location: assign_programs.php?user_id=" . $userId);
+    header("Location: view.php?user_id=" . $userId);
     exit();
 }
 
@@ -94,7 +94,7 @@ while ($row = $currentProgramsResult->fetch_assoc()) {
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="<?php echo $basePath; ?>dashboard.php">Dashboard</a></li>
                 <li class="breadcrumb-item"><a href="list.php">Users</a></li>
-                <li class="breadcrumb-item"><a href="view.php?id=<?php echo $userId; ?>"><?php echo htmlspecialchars($user['full_name']); ?></a></li>
+                <li class="breadcrumb-item"><a href="view.php?user_id=<?php echo $userId; ?>"><?php echo htmlspecialchars($user['full_name']); ?></a></li>
                 <li class="breadcrumb-item active">Assign Programs</li>
             </ol>
         </nav>
@@ -144,7 +144,7 @@ while ($row = $currentProgramsResult->fetch_assoc()) {
             </div>
             
             <div class="form-actions">
-                <a href="view.php?id=<?php echo $userId; ?>" class="btn btn-secondary">Cancel</a>
+                <a href="view.php?user_id=<?php echo $userId; ?>" class="btn btn-secondary">Cancel</a>
                 <button type="submit" class="btn btn-primary">Save Assignments</button>
             </div>
         </form>
